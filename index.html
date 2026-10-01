@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>출석 체크</title>
+<style>
+  :root{
+    --ink:#1b1f23; --paper:#fafaf8; --line:#d8d8d3;
+    --accent:#2f5d4f; --accent-dim:#e7efec; --err:#a83232;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    padding-top:calc(24px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
+  }
+  .card{ width:100%; max-width:380px; }
+  .eyebrow{ font-size:14px; color:#666; margin:0 0 4px; }
+  h1{ font-size:26px; margin:0 0 20px; line-height:1.25; font-weight:600; }
+  label{ display:block; font-size:14px; color:#555; margin-bottom:6px; }
+  input[type=text]{
+    width:100%; font-size:18px; padding:14px; border:1px solid var(--line);
+    border-radius:8px; background:#fff; color:var(--ink);
+  }
+  input[type=text]:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); }
+  .status{ margin-top:14px; font-size:14px; color:#666; min-height:20px; }
+  .status.err{ color:var(--err); }
+  button{
+    width:100%; margin-top:20px; padding:15px; font-size:16px; font-weight:600;
+    border:none; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer;
+  }
+  button:disabled{ background:#a9beb6; cursor:not-allowed; }
+  .result{ display:none; text-align:center; padding:40px 20px; }
+  .result.show{ display:block; }
+  .form-wrap.hide{ display:none; }
+  .result h2{ font-size:22px; margin:0 0 8px; }
+  .result p{ color:#666; font-size:15px; }
+  .checkmark{ font-size:44px; line-height:1; margin-bottom:12px; }
+  .fine{ margin-top:20px; font-size:12px; color:#999; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="form-wrap" id="formWrap">
+    <p class="eyebrow">출석 체크</p>
+    <h1>학번(AndrewID)을 입력하고 제출하세요</h1>
+    <p class="fine">정확한 위치가 기록되도록 위치 권한은 "정확한 위치(Precise)"로 허용해 주세요.</p>
+
+    <label for="studentId">AndrewID</label>
+    <input type="text" id="studentId" inputmode="text" autocomplete="off" placeholder="">
+
+    <div class="status" id="status">위치 정보를 가져오는 중…</div>
+    <button id="submitBtn" disabled>출석 제출</button>
+
+    <p class="fine">제출 시 AndrewID, 현재 위치, 이 브라우저의 식별값이 함께 기록됩니다.</p>
+  </div>
+
+  <div class="result" id="result">
+    <div class="checkmark">✓</div>
+    <h2>제출 완료</h2>
+    <p id="resultDetail"></p>
+  </div>
+</div>
+
+<script>
+// ====== 본인 Apps Script 웹앱 URL ======
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6AKPt9lnir2MDk-0r8DVpuvnHe3zcA58Kqpmjxzl9BfnVkenr2MNOv40Jvd0rYrra/exec";
+// =======================================
+
+const statusEl = document.getElementById('status');
+const submitBtn = document.getElementById('submitBtn');
+const studentIdEl = document.getElementById('studentId');
+let coords = null;
+
+function getDeviceId(){
+  let id = localStorage.getItem('attendance_device_id');
+  if(!id){
+    id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 12);
+    try{ localStorage.setItem('attendance_device_id', id); }catch(e){}
+  }
+  return id;
+}
+
+function requestLocation(){
+  if(!('geolocation' in navigator)){
+    statusEl.textContent = '이 브라우저는 위치 정보를 지원하지 않습니다.';
+    statusEl.classList.add('err'); return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      coords = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+      statusEl.textContent = '위치 확인 완료 (정확도 약 ' + Math.round(pos.coords.accuracy) + 'm)';
+      statusEl.classList.remove('err');
+      submitBtn.disabled = false;
+    },
+    err => {
+      statusEl.textContent = '위치 권한이 필요합니다. 설정에서 위치 접근을 허용한 뒤 새로고침 해주세요.';
+      statusEl.classList.add('err');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+submitBtn.addEventListener('click', async () => {
+  const studentId = studentIdEl.value.trim();
+  if(!studentId){ statusEl.textContent = '학번을 입력해주세요.'; statusEl.classList.add('err'); return; }
+  if(!coords){ statusEl.textContent = '위치 정보가 아직 없습니다.'; statusEl.classList.add('err'); return; }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = '제출 중…';
+
+  const payload = {
+    studentId: studentId,
+    latitude: coords.lat,
+    longitude: coords.lng,
+    accuracy: coords.accuracy,
+    deviceId: getDeviceId(),
+    userAgent: navigator.userAgent,
+    screen: screen.width + 'x' + screen.height,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    clientTime: new Date().toISOString()
+  };
+
+  try{
+    await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    document.getElementById('formWrap').classList.add('hide');
+    document.getElementById('result').classList.add('show');
+    document.getElementById('resultDetail').textContent =
+      studentId + ' 님, 제출 시각 ' + new Date().toLocaleTimeString('ko-KR');
+  }catch(e){
+    statusEl.textContent = '제출에 실패했습니다. 네트워크를 확인하고 다시 시도해주세요.';
+    statusEl.classList.add('err');
+    submitBtn.disabled = false;
+    submitBtn.textContent = '출석 제출';
+  }
+});
+
+requestLocation();
+</script>
+</body>
+</html>
