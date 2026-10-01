@@ -126,17 +126,23 @@ submitBtn.addEventListener('click', async () => {
   };
 
   try{
-    await fetch(SCRIPT_URL, {
+    const res = await fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload)
     });
+    // 서버가 실제로 기록에 성공했을 때만 완료 처리
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || 'server error');
+
     document.getElementById('formWrap').classList.add('hide');
     document.getElementById('result').classList.add('show');
     document.getElementById('resultDetail').textContent =
       studentId + ' 님, 제출 시각 ' + new Date().toLocaleTimeString('ko-KR');
   }catch(e){
-    statusEl.textContent = '제출에 실패했습니다. 네트워크를 확인하고 다시 시도해주세요.';
+    statusEl.textContent = (e.message === 'invalid id')
+      ? 'AndrewID 형식이 올바르지 않습니다. 영문/숫자만 입력해주세요.'
+      : '제출에 실패했습니다. 네트워크를 확인하고 다시 시도해주세요.';
     statusEl.classList.add('err');
     submitBtn.disabled = false;
     submitBtn.textContent = '출석 제출';
